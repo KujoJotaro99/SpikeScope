@@ -1,6 +1,34 @@
 import torch
 from config import HARDWARE_CONFIGS, PROFILER_DEFAULTS
 
+def compute_weight_sparsity(model):
+    """
+    Computes per-linear-layer density p_w and a global p_w.
+    """
+    layer_stats = {}
+    total_nonzero = 0
+    total_params  = 0
+
+    #only go through dense weight matrices
+    for name, module in model.named_modules():
+        #linear and conv layers have weight calculation
+        if isinstance(module, torch.nn.Linear) or isinstance(module, torch.nn.Conv2d):
+            #get raw weight tensor and flatten
+            w = module.weight.data.abs().view(-1)
+            nonzero = int((w > 1e-3).sum().item())
+            count = w.numel()
+            p_w = nonzero / count if count else 0.0
+            layer_stats[name] = {
+                'nonzero': nonzero,
+                'total':   count,
+                'p_w':     p_w,
+            }
+            total_nonzero += nonzero
+            total_params  += count
+
+    global_p_w = total_nonzero / total_params if total_params else 0.0
+    return layer_stats, global_p_w
+
 def count_spikes(model, data_loader, device=None):
     """
     Count the total number of spikes emitted by the model across the dataset.
@@ -80,8 +108,7 @@ def get_model_stats(model):
     
     return total_neurons, total_weights, layer_info
 
-def calculate_memory_traffic(model, data_loader, hardware_config='loihi1', 
-                           num_steps=None, device=None, verbose=False):
+def calculate_memory_traffic(model, data_loader, hardware_config='loihi1', num_steps=None, device=None, verbose=False):
     """
     Calculate memory traffic for SNN inference.
     """
@@ -96,6 +123,8 @@ def calculate_memory_traffic(model, data_loader, hardware_config='loihi1',
         hw_config = HARDWARE_CONFIGS.get(hardware_config, HARDWARE_CONFIGS['conventional'])
     else:
         hw_config = hardware_config
+
+    layer_stats, global_p_w = compute_weight_sparsity(model)
     
     total_neurons, total_weights, layer_info = get_model_stats(model)
     
@@ -113,7 +142,7 @@ def calculate_memory_traffic(model, data_loader, hardware_config='loihi1',
     b_a = hw_config['spike_precision']
     
     #static weight traffic in bits
-    weight_traffic = total_weights * b_w
+    weight_traffic = total_weights * b_w * global_p_w
     
     #dynamic activation traffic in bits
     activation_traffic = b_a * firing_rate * total_neurons * num_steps
@@ -132,6 +161,10 @@ def calculate_memory_traffic(model, data_loader, hardware_config='loihi1',
     
     results = {
         'hardware_config': hw_config['name'],
+        'weight_sparsity': {
+            'per_layer': layer_stats,
+            'global_p_w': global_p_w,
+        },
         'memory_traffic_bits': {
             'weight_traffic': weight_traffic,
             'activation_traffic': activation_traffic,

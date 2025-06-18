@@ -51,4 +51,4 @@ if __name__ == "__main__":
     
     print("\n3. Calculate Memory Traffic:")
     results = calculate_memory_traffic(model, data_batches, verbose=True, hardware_config = "loihi2")
-    # print(f"Calculation results {results}")
+    print(f"Calculation results {results}")
