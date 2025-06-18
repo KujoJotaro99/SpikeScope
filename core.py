@@ -3,7 +3,7 @@ import json
 import matplotlib.pyplot as plt
 import os
 
-def count_spikes(model, data_loader, num_steps, device=None):
+def count_spikes(model, data_loader, device=None):
     """
     Count the total number of spikes emitted by the model across the dataset.
 
@@ -34,21 +34,28 @@ def count_spikes(model, data_loader, num_steps, device=None):
     with torch.no_grad():
         for data, _ in data_loader:
             data = data.to(device)
-            output = list(model(data, num_steps))
-            batch_spike_total = 0
+            output = model(data)
+
+            if isinstance(output, tuple):
+                output, spike_list = output
+                output = spike_list
+            else:
+                #when return_spikes=false
+                output = [output]
+
+            batch_spike_total = 0.0
 
             for i, spikes in enumerate(output):
                 layer_key = f"layer_{i}"
+                layer_spikes = spikes.sum().item() 
                 if layer_key not in spike_counts:
-                    spike_counts[layer_key] = spikes.sum()
+                    spike_counts[layer_key] = layer_spikes
                 else:
-                    spike_counts[layer_key] += spikes.sum()
-                batch_spike_total += spikes.sum().item()
+                    spike_counts[layer_key] += layer_spikes
+                batch_spike_total += layer_spikes
 
             total_spikes += batch_spike_total
             total_samples += data.size(0)
 
-            return total_spikes, total_samples, spike_counts
-
-    return
+    return total_spikes, total_samples, spike_counts
 

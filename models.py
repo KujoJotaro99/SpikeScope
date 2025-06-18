@@ -5,23 +5,28 @@ from snntorch import surrogate
 import torch.nn.functional as F
 from config import MODEL_PATHS
 
+beta = 0.5
+spike_grad = surrogate.fast_sigmoid(slope=25)
+batch_size = 64
+
 class ExoplanetSNN(nn.Module):
-    def __init__(self, beta=0.5, spike_grad=None, input_size=3197, batch_size=64):
+    def __init__(self, return_spikes=False):
         super().__init__()
-        if spike_grad is None:
-            spike_grad = surrogate.fast_sigmoid(slope=25)
-        self.batch_size = batch_size
 
-        self.fc1 = nn.Linear(input_size, 128)
+        # Initialize layers (3 linear layers and 3 leaky layers)
+        self.fc1 = nn.Linear(3197, 128) # takes an input of 3197 and outputs 128
         self.lif1 = snn.Leaky(beta=beta, spike_grad=spike_grad)
-
-        self.fc2 = nn.Linear(64, 64)
+        self.fc2 = nn.Linear(64, 64) # takes an input of 64 and outputs 68
         self.lif2 = snn.Leaky(beta=beta, spike_grad=spike_grad)
-
-        self.fc3 = nn.Linear(32, 2)
+        self.fc3 = nn.Linear(32, 2) # takes in 32 inputs and outputs our two outputs (planet with/without an exoplanet)
         self.lif3 = snn.Leaky(beta=beta, spike_grad=spike_grad)
+        self.softmax = nn.Softmax(dim=1) # softmax applied with a dimension of 1
+        self.return_spikes = return_spikes
 
-    def forward(self, x, num_steps=1):
+    def forward(self, x):
+        actual_batch_size = x.size(0)
+
+        # Initialize hidden states and outputs at t=0
         mem1 = self.lif1.init_leaky()
         mem2 = self.lif2.init_leaky()
 
@@ -31,9 +36,14 @@ class ExoplanetSNN(nn.Module):
         cur2 = F.max_pool1d(self.fc2(spk1), 2)
         spk2, mem2 = self.lif2(cur2, mem2)
 
-        out = self.fc3(spk2.view(self.batch_size, -1))
-        return out
+        cur3 = self.fc3(spk2.view(actual_batch_size, -1))
 
+        # return cur3
+        if self.return_spikes:
+            # Return both output and spikes for counting
+            return cur3, [spk1, spk2]
+        else:
+            return cur3
 
 def load_exoplanet_model(weights_path=None, device=None, **kwargs):
     """
