@@ -1,7 +1,5 @@
 import torch
-import json
-import matplotlib.pyplot as plt
-import os
+from config import HARDWARE_CONFIGS, PROFILER_DEFAULTS
 
 def count_spikes(model, data_loader, device=None):
     """
@@ -58,4 +56,104 @@ def count_spikes(model, data_loader, device=None):
             total_samples += data.size(0)
 
     return total_spikes, total_samples, spike_counts
+
+def get_model_stats(model):
+    """Extract information about the model architecture."""
+    total_neurons = 0
+    total_weights = 0
+    layer_info = {}
+    
+    for name, module in model.named_modules():
+        if isinstance(module, torch.nn.Linear):
+            input_size = module.in_features
+            output_size = module.out_features
+            weights = input_size * output_size
+            
+            total_neurons += output_size
+            total_weights += weights
+            
+            layer_info[name] = {
+                'input_size': input_size,
+                'output_size': output_size,
+                'weights': weights
+            }
+    
+    return total_neurons, total_weights, layer_info
+
+def calculate_memory_traffic(model, data_loader, hardware_config='loihi1', 
+                           num_steps=None, device=None, verbose=False):
+    """
+    Calculate memory traffic for SNN inference.
+    """
+
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        
+    if num_steps is None:
+        num_steps = PROFILER_DEFAULTS['num_steps']
+    
+    if isinstance(hardware_config, str):
+        hw_config = HARDWARE_CONFIGS.get(hardware_config, HARDWARE_CONFIGS['conventional'])
+    else:
+        hw_config = hardware_config
+    
+    total_neurons, total_weights, layer_info = get_model_stats(model)
+    
+    total_spikes, total_samples, spike_counts = count_spikes(model, data_loader, device)
+    
+    #firing rate per neuron per timestep
+    if total_samples > 0 and total_neurons > 0:
+        avg_spikes_per_sample = total_spikes / total_samples
+        firing_rate = avg_spikes_per_sample / (total_neurons * num_steps)
+    else:
+        firing_rate = 0
+    
+    #memory traffic calculations
+    b_w = hw_config['weight_precision']
+    b_a = hw_config['spike_precision']
+    
+    #static weight traffic in bits
+    weight_traffic = total_weights * b_w
+    
+    #dynamic activation traffic in bits
+    activation_traffic = b_a * firing_rate * total_neurons * num_steps
+    
+    #total traffic per inference
+    total_traffic = weight_traffic + activation_traffic
+    
+    #cache movement
+    cache_size_bits = hw_config['cache_size_kb'] * 1024 * 8
+    cache_overflow = max(activation_traffic - cache_size_bits, 0)
+    
+    #energy estimation, figure from loihi paper
+    static_energy = hw_config['static_power_per_core'] * (num_steps * 1e-3)
+    dynamic_energy = avg_spikes_per_sample * hw_config['energy_per_spike']
+    total_energy = static_energy + dynamic_energy
+    
+    results = {
+        'hardware_config': hw_config['name'],
+        'memory_traffic_bits': {
+            'weight_traffic': weight_traffic,
+            'activation_traffic': activation_traffic,
+            'total_traffic': total_traffic,
+            'cache_overflow': cache_overflow
+        },
+        'energy_estimate_J': {
+            'static_energy': static_energy,
+            'dynamic_energy': dynamic_energy,
+            'total_energy': total_energy
+        }
+    }
+    
+    if verbose:
+        print(f"Hardware profile: {hw_config['name']}")
+        print(f"Model: {total_neurons:,} neurons, {total_weights:,} weights")
+        print(f"Firing rate: {firing_rate:.6f} spikes/neuron/timestep")
+        print(f"Weight traffic: {weight_traffic/1e6:.2f} Mbits")
+        print(f"Activation traffic: {activation_traffic/1e6:.2f} Mbits")
+        print(f"Total traffic: {total_traffic/1e6:.2f} Mbits")
+        print(f"Cache overflow: {cache_overflow/1e6:.2f} Mbits")
+        print(f"Total energy: {total_energy*1e6:.2f} µJ")
+    
+    return results
 
