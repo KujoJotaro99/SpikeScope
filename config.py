@@ -40,7 +40,7 @@ HARDWARE_CONFIGS = {
         'weight_precision': 32,
         'spike_precision': 32,
         'static_power_per_core': 10,
-        'energy_per_spike': 100e-12, 
+        'energy_per_spike': 3e-12, 
     }
 }
 
@@ -49,6 +49,6 @@ PROFILER_DEFAULTS = {
     'memory_size_mb': 4,
     'weight_bits': 8,
     'activation_bits': 1,
-    'weight_sparsity': 1.0,  # 1.0 = fully dense
+    'weight_sparsity': 1.0,
     'num_steps': 100
 }

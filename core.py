@@ -152,7 +152,7 @@ def calculate_memory_traffic(model, data_loader, hardware_config='loihi1', num_s
     
     #cache movement
     cache_size_bits = hw_config['cache_size_kb'] * 1024 * 8
-    cache_overflow = max(activation_traffic - cache_size_bits, 0)
+    cache_overflow = max(activation_traffic - cache_size_bits, 0) #goes to dram
     
     #energy estimation, figure from loihi paper
     static_energy = hw_config['static_power_per_core'] * (num_steps * 1e-3)
@@ -183,7 +183,7 @@ def calculate_memory_traffic(model, data_loader, hardware_config='loihi1', num_s
         print(f"Model: {total_neurons:,} neurons, {total_weights:,} weights")
         print(f"Firing rate: {firing_rate:.6f} spikes/neuron/timestep")
         print(f"Weight traffic: {weight_traffic/1e6:.2f} Mbits")
-        print(f"Activation traffic: {activation_traffic/1e6:.2f} Mbits")
+        print(f"Activation traffic: {activation_traffic} bits")
         print(f"Total traffic: {total_traffic/1e6:.2f} Mbits")
         print(f"Cache overflow: {cache_overflow/1e6:.2f} Mbits")
         print(f"Total energy: {total_energy*1e6:.2f} µJ")

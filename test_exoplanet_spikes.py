@@ -50,5 +50,5 @@ if __name__ == "__main__":
     print(f"Average spikes per sample: {total_spikes / total_samples:.2f}")
     
     print("\n3. Calculate Memory Traffic:")
-    results = calculate_memory_traffic(model, data_batches, verbose=True, hardware_config = "loihi2")
+    results = calculate_memory_traffic(model, data_batches, verbose=True, hardware_config = "conventional")
     print(f"Calculation results {results}")
